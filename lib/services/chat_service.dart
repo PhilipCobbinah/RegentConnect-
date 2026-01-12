@@ -308,4 +308,42 @@ class ChatService {
     final chatRoomId = getChatRoomId(recipientId);
     return _firestore.collection('chat_rooms').doc(chatRoomId).snapshots();
   }
+
+  // Get total unread messages count
+  Stream<int> getTotalUnreadCount() {
+    return _firestore
+        .collection('chat_rooms')
+        .where('participants', arrayContains: currentUserId)
+        .snapshots()
+        .asyncMap((chatRooms) async {
+          int totalUnread = 0;
+          
+          for (var room in chatRooms.docs) {
+            final unreadQuery = await _firestore
+                .collection('chat_rooms')
+                .doc(room.id)
+                .collection('messages')
+                .where('receiverId', isEqualTo: currentUserId)
+                .where('isRead', isEqualTo: false)
+                .get();
+            
+            totalUnread += unreadQuery.docs.length;
+          }
+          
+          return totalUnread;
+        });
+  }
+
+  // Get unread count for specific chat
+  Stream<int> getUnreadCountForChat(String otherUserId) {
+    final chatRoomId = getChatRoomId(otherUserId);
+    return _firestore
+        .collection('chat_rooms')
+        .doc(chatRoomId)
+        .collection('messages')
+        .where('receiverId', isEqualTo: currentUserId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
+  }
 }

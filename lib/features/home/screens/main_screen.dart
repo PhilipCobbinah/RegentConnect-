@@ -9,6 +9,7 @@ import '../../calls/screens/calls_tab.dart';
 import '../../status/screens/status_tab.dart';
 import '../../settings/screens/settings_screen.dart';
 import '../../p_questions/screens/academics_tab.dart';
+import '../../../services/chat_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -22,6 +23,7 @@ class _MainScreenState extends State<MainScreen> {
   int _selectedFilter = 0;
   
   final List<String> _filters = ['All', 'Unread', 'Groups'];
+  final ChatService _chatService = ChatService();
 
   @override
   Widget build(BuildContext context) {
