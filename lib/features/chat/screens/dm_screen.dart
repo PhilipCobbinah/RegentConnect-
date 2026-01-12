@@ -18,12 +18,14 @@ class DMScreen extends StatefulWidget {
   final String recipientId;
   final String recipientName;
   final String? recipientPhoto;
+  final String? highlightMessageId; // New: for search result navigation
 
   const DMScreen({
     super.key,
     required this.recipientId,
     required this.recipientName,
     this.recipientPhoto,
+    this.highlightMessageId,
   });
 
   @override
@@ -50,6 +52,9 @@ class _DMScreenState extends State<DMScreen> {
   StreamSubscription? _messageSubscription;
   int _previousMessageCount = 0;
 
+  String? _highlightedMessageId;
+  final Map<String, GlobalKey> _messageKeys = {};
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +63,17 @@ class _DMScreenState extends State<DMScreen> {
     // Add listener for text changes to detect typing
     _messageController.addListener(_onTextChanged);
     _listenForNewMessages();
+    
+    // Set highlighted message if coming from search
+    if (widget.highlightMessageId != null) {
+      _highlightedMessageId = widget.highlightMessageId;
+      // Clear highlight after 3 seconds
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() => _highlightedMessageId = null);
+        }
+      });
+    }
   }
 
   void _listenForNewMessages() {
@@ -434,7 +450,14 @@ class _DMScreenState extends State<DMScreen> {
                   );
                 }
 
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                // Scroll to highlighted message if exists
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_highlightedMessageId != null) {
+                    _scrollToMessage(_highlightedMessageId!);
+                  } else {
+                    _scrollToBottom();
+                  }
+                });
 
                 return ListView.builder(
                   controller: _scrollController,
@@ -442,7 +465,12 @@ class _DMScreenState extends State<DMScreen> {
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final data = messages[index].data() as Map<String, dynamic>;
+                    final messageId = messages[index].id;
                     final isMe = data['senderId'] == _chatService.currentUserId;
+                    final isHighlighted = messageId == _highlightedMessageId;
+                    
+                    // Store key for scrolling
+                    _messageKeys[messageId] = GlobalKey();
                     
                     // Check if we should show date header
                     bool showDateHeader = false;
@@ -462,9 +490,19 @@ class _DMScreenState extends State<DMScreen> {
                     }
 
                     return Column(
+                      key: _messageKeys[messageId],
                       children: [
                         if (showDateHeader) _buildDateHeader(data['timestamp'] as Timestamp?),
-                        _buildMessageBubble(data, isMe, messages[index].id),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 500),
+                          decoration: BoxDecoration(
+                            color: isHighlighted 
+                                ? RegentColors.violet.withOpacity(0.3)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: _buildMessageBubble(data, isMe, messageId),
+                        ),
                       ],
                     );
                   },
@@ -509,6 +547,18 @@ class _DMScreenState extends State<DMScreen> {
         ],
       ),
     );
+  }
+
+  void _scrollToMessage(String messageId) {
+    final key = _messageKeys[messageId];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        alignment: 0.5,
+      );
+    }
   }
 
   Widget _buildTypingAnimation() {

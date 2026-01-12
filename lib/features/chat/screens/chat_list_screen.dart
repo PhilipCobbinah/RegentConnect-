@@ -18,11 +18,127 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final _statusService = StatusService();
   final _searchController = TextEditingController();
   bool _isSearching = false;
+  String _searchQuery = '';
+  List<Map<String, dynamic>> _searchResults = [];
+  List<Map<String, dynamic>> _messageSearchResults = [];
+  bool _isLoadingSearch = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_onSearchChanged);
+  }
 
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    final query = _searchController.text.trim();
+    if (query != _searchQuery) {
+      setState(() => _searchQuery = query);
+      if (query.isNotEmpty) {
+        _performSearch(query);
+      } else {
+        setState(() {
+          _searchResults = [];
+          _messageSearchResults = [];
+        });
+      }
+    }
+  }
+
+  Future<void> _performSearch(String query) async {
+    setState(() => _isLoadingSearch = true);
+
+    try {
+      // Search users
+      final usersSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .get();
+      
+      final userResults = usersSnapshot.docs
+          .where((doc) {
+            final data = doc.data();
+            final name = (data['fullName'] ?? '').toString().toLowerCase();
+            final email = (data['email'] ?? '').toString().toLowerCase();
+            return name.contains(query.toLowerCase()) || 
+                   email.contains(query.toLowerCase());
+          })
+          .where((doc) => doc.id != _chatService.currentUserId)
+          .map((doc) => {
+            ...doc.data(),
+            'odbc': doc.id,
+            'type': 'user',
+          })
+          .toList();
+
+      // Search messages in all chat rooms
+      final chatRooms = await FirebaseFirestore.instance
+          .collection('chat_rooms')
+          .where('participants', arrayContains: _chatService.currentUserId)
+          .get();
+
+      final messageResults = <Map<String, dynamic>>[];
+
+      for (var room in chatRooms.docs) {
+        final messages = await FirebaseFirestore.instance
+            .collection('chat_rooms')
+            .doc(room.id)
+            .collection('messages')
+            .where('isDeleted', isEqualTo: false)
+            .get();
+
+        for (var msg in messages.docs) {
+          final data = msg.data();
+          final messageText = (data['message'] ?? '').toString().toLowerCase();
+          
+          if (messageText.contains(query.toLowerCase())) {
+            final participants = List<String>.from(room.data()['participants'] ?? []);
+            final otherUserId = participants.firstWhere(
+              (id) => id != _chatService.currentUserId,
+              orElse: () => '',
+            );
+
+            if (otherUserId.isNotEmpty) {
+              final userData = await _chatService.getUserData(otherUserId);
+              messageResults.add({
+                'messageId': msg.id,
+                'message': data['message'],
+                'senderId': data['senderId'],
+                'senderName': data['senderName'],
+                'timestamp': data['timestamp'],
+                'otherUserId': otherUserId,
+                'otherUserName': userData?['fullName'] ?? userData?['email'] ?? 'Unknown',
+                'otherUserPhoto': userData?['photoUrl'],
+                'type': 'message',
+                'chatRoomId': room.id,
+              });
+            }
+          }
+        }
+      }
+
+      // Sort messages by timestamp
+      messageResults.sort((a, b) {
+        final aTime = a['timestamp'] as Timestamp?;
+        final bTime = b['timestamp'] as Timestamp?;
+        if (aTime == null || bTime == null) return 0;
+        return bTime.compareTo(aTime);
+      });
+
+      setState(() {
+        _searchResults = userResults;
+        _messageSearchResults = messageResults.take(20).toList(); // Limit to 20 results
+        _isLoadingSearch = false;
+      });
+    } catch (e) {
+      setState(() => _isLoadingSearch = false);
+      debugPrint('Search error: $e');
+    }
   }
 
   @override
@@ -36,10 +152,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 controller: _searchController,
                 autofocus: true,
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  hintText: 'Search chats...',
-                  hintStyle: TextStyle(color: Colors.white54),
+                decoration: InputDecoration(
+                  hintText: 'Search users or messages...',
+                  hintStyle: const TextStyle(color: Colors.white54),
                   border: InputBorder.none,
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, color: Colors.white54),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                      : null,
                 ),
               )
             : Row(
@@ -119,153 +243,421 @@ class _ChatListScreenState extends State<ChatListScreen> {
             onPressed: () {
               setState(() {
                 _isSearching = !_isSearching;
-                if (!_isSearching) _searchController.clear();
+                if (!_isSearching) {
+                  _searchController.clear();
+                  _searchResults = [];
+                  _messageSearchResults = [];
+                  _searchQuery = '';
+                }
               });
             },
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        // Chat rooms are already ordered by lastMessageTime descending in the service
-        stream: _chatService.getChatRooms(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
-          }
-
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator(color: RegentColors.violet));
-          }
-
-          final chatRooms = snapshot.data!.docs;
-
-          if (chatRooms.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.chat_bubble_outline, size: 80, color: RegentColors.violet.withOpacity(0.5)),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No conversations yet',
-                    style: TextStyle(color: Colors.white70, fontSize: 18),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Start a chat with someone!',
-                    style: TextStyle(color: Colors.white54, fontSize: 14),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            itemCount: chatRooms.length,
-            itemBuilder: (context, index) {
-              final data = chatRooms[index].data() as Map<String, dynamic>;
-              final participants = List<String>.from(data['participants'] ?? []);
-              final otherUserId = participants.firstWhere(
-                (id) => id != _chatService.currentUserId,
-                orElse: () => '',
-              );
-
-              if (otherUserId.isEmpty) return const SizedBox();
-
-              return FutureBuilder<Map<String, dynamic>?>(
-                future: _chatService.getUserData(otherUserId),
-                builder: (context, userSnapshot) {
-                  final userData = userSnapshot.data;
-                  final userName = userData?['fullName'] ?? userData?['email'] ?? 'Unknown';
-                  final userPhoto = userData?['photoUrl'];
-                  final lastMessage = data['lastMessage'] ?? '';
-                  final lastTime = data['lastMessageTime'] as Timestamp?;
-                  
-                  // Format time based on how recent
-                  String timeStr = '';
-                  if (lastTime != null) {
-                    final now = DateTime.now();
-                    final messageDate = lastTime.toDate();
-                    final today = DateTime(now.year, now.month, now.day);
-                    final msgDay = DateTime(messageDate.year, messageDate.month, messageDate.day);
-                    
-                    if (msgDay == today) {
-                      // Today - show time
-                      timeStr = '${messageDate.hour.toString().padLeft(2, '0')}:${messageDate.minute.toString().padLeft(2, '0')}';
-                    } else if (msgDay == today.subtract(const Duration(days: 1))) {
-                      // Yesterday
-                      timeStr = 'Yesterday';
-                    } else if (now.difference(messageDate).inDays < 7) {
-                      // Within a week - show day name
-                      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-                      timeStr = days[messageDate.weekday - 1];
-                    } else {
-                      // Older - show date
-                      timeStr = '${messageDate.day}/${messageDate.month}/${messageDate.year}';
-                    }
-                  }
-
-                  // Check if there's typing
-                  return StreamBuilder<DocumentSnapshot>(
-                    stream: _chatService.getTypingStatus(otherUserId),
-                    builder: (context, typingSnapshot) {
-                      String subtitleText = lastMessage;
-                      bool isTyping = false;
-                      
-                      if (typingSnapshot.hasData && typingSnapshot.data!.exists) {
-                        final typingData = typingSnapshot.data!.data() as Map<String, dynamic>?;
-                        final typing = typingData?['typing'] as Map<String, dynamic>?;
-                        if (typing?[otherUserId] != null) {
-                          subtitleText = 'typing...';
-                          isTyping = true;
-                        }
-                      }
-
-                      return _ChatListTile(
-                        odbc: otherUserId,
-                        userName: userName,
-                        userPhoto: userPhoto,
-                        lastMessage: subtitleText,
-                        timeStr: timeStr,
-                        isTyping: isTyping,
-                        statusService: _statusService,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => DMScreen(
-                                recipientId: otherUserId,
-                                recipientName: userName,
-                                recipientPhoto: userPhoto,
-                              ),
-                            ),
-                          );
-                        },
-                        onStatusTap: (statuses) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ViewStatusScreen(
-                                statuses: statuses,
-                                isOwner: false,
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          );
-        },
-      ),
+      body: _isSearching && _searchQuery.isNotEmpty
+          ? _buildSearchResults()
+          : _buildChatList(),
       floatingActionButton: FloatingActionButton(
         backgroundColor: RegentColors.violet,
         child: const Icon(Icons.chat, color: Colors.white),
         onPressed: () => _showUsersList(context),
       ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    if (_isLoadingSearch) {
+      return const Center(
+        child: CircularProgressIndicator(color: RegentColors.violet),
+      );
+    }
+
+    if (_searchResults.isEmpty && _messageSearchResults.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 64, color: RegentColors.violet.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text(
+              'No results for "$_searchQuery"',
+              style: const TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Try searching for a different name or message',
+              style: TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      children: [
+        // Users section
+        if (_searchResults.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.people, color: RegentColors.violet, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'People (${_searchResults.length})',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ..._searchResults.map((user) => _buildUserSearchTile(user)),
+          const Divider(color: RegentColors.dmCard, height: 32),
+        ],
+
+        // Messages section
+        if (_messageSearchResults.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.message, color: RegentColors.violet, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Messages (${_messageSearchResults.length})',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ..._messageSearchResults.map((msg) => _buildMessageSearchTile(msg)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildUserSearchTile(Map<String, dynamic> user) {
+    final userName = user['fullName'] ?? user['email'] ?? 'Unknown';
+    final userPhoto = user['photoUrl'];
+    final odbc = user['userId'];
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: RegentColors.violet,
+        backgroundImage: userPhoto != null ? NetworkImage(userPhoto) : null,
+        child: userPhoto == null
+            ? Text(
+                userName[0].toUpperCase(),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              )
+            : null,
+      ),
+      title: _highlightText(userName, _searchQuery),
+      subtitle: Text(
+        user['email'] ?? '',
+        style: const TextStyle(color: Colors.white54, fontSize: 12),
+      ),
+      trailing: const Icon(Icons.chat_bubble_outline, color: RegentColors.violet),
+      onTap: () {
+        setState(() {
+          _isSearching = false;
+          _searchController.clear();
+        });
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DMScreen(
+              recipientId: userId,
+              recipientName: userName,
+              recipientPhoto: userPhoto,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMessageSearchTile(Map<String, dynamic> msg) {
+    final message = msg['message'] ?? '';
+    final otherUserName = msg['otherUserName'] ?? 'Unknown';
+    final otherUserPhoto = msg['otherUserPhoto'];
+    final timestamp = msg['timestamp'] as Timestamp?;
+    final senderName = msg['senderName'] ?? 'Unknown';
+    final isMe = msg['senderId'] == _chatService.currentUserId;
+
+    String timeStr = '';
+    if (timestamp != null) {
+      final date = timestamp.toDate();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final msgDay = DateTime(date.year, date.month, date.day);
+
+      if (msgDay == today) {
+        timeStr = '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+      } else if (msgDay == today.subtract(const Duration(days: 1))) {
+        timeStr = 'Yesterday';
+      } else {
+        timeStr = '${date.day}/${date.month}/${date.year}';
+      }
+    }
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: RegentColors.dmCard,
+        backgroundImage: otherUserPhoto != null ? NetworkImage(otherUserPhoto) : null,
+        child: otherUserPhoto == null
+            ? Text(
+                otherUserName[0].toUpperCase(),
+                style: const TextStyle(color: Colors.white),
+              )
+            : null,
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              otherUserName,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            timeStr,
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isMe ? 'You' : senderName,
+            style: TextStyle(
+              color: RegentColors.lightViolet,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 2),
+          _highlightText(message, _searchQuery, maxLines: 2),
+        ],
+      ),
+      isThreeLine: true,
+      onTap: () {
+        setState(() {
+          _isSearching = false;
+          _searchController.clear();
+        });
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DMScreen(
+              recipientId: msg['otherUserId'],
+              recipientName: otherUserName,
+              recipientPhoto: otherUserPhoto,
+              highlightMessageId: msg['messageId'], // For scrolling to message
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _highlightText(String text, String query, {int maxLines = 1}) {
+    if (query.isEmpty) {
+      return Text(
+        text,
+        style: const TextStyle(color: Colors.white),
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final startIndex = lowerText.indexOf(lowerQuery);
+
+    if (startIndex == -1) {
+      return Text(
+        text,
+        style: const TextStyle(color: Colors.white),
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    final endIndex = startIndex + query.length;
+    
+    return RichText(
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        children: [
+          if (startIndex > 0)
+            TextSpan(
+              text: text.substring(0, startIndex),
+              style: const TextStyle(color: Colors.white70),
+            ),
+          TextSpan(
+            text: text.substring(startIndex, endIndex),
+            style: const TextStyle(
+              color: Colors.white,
+              backgroundColor: RegentColors.violet,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (endIndex < text.length)
+            TextSpan(
+              text: text.substring(endIndex),
+              style: const TextStyle(color: Colors.white70),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _chatService.getChatRooms(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: RegentColors.violet));
+        }
+
+        final chatRooms = snapshot.data!.docs;
+
+        if (chatRooms.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.chat_bubble_outline, size: 80, color: RegentColors.violet.withOpacity(0.5)),
+                const SizedBox(height: 16),
+                const Text(
+                  'No conversations yet',
+                  style: TextStyle(color: Colors.white70, fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Start a chat with someone!',
+                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: chatRooms.length,
+          itemBuilder: (context, index) {
+            final data = chatRooms[index].data() as Map<String, dynamic>;
+            final participants = List<String>.from(data['participants'] ?? []);
+            final otherUserId = participants.firstWhere(
+              (id) => id != _chatService.currentUserId,
+              orElse: () => '',
+            );
+
+            if (otherUserId.isEmpty) return const SizedBox();
+
+            return FutureBuilder<Map<String, dynamic>?>(
+              future: _chatService.getUserData(otherUserId),
+              builder: (context, userSnapshot) {
+                final userData = userSnapshot.data;
+                final userName = userData?['fullName'] ?? userData?['email'] ?? 'Unknown';
+                final userPhoto = userData?['photoUrl'];
+                final lastMessage = data['lastMessage'] ?? '';
+                final lastTime = data['lastMessageTime'] as Timestamp?;
+                
+                // Format time based on how recent
+                String timeStr = '';
+                if (lastTime != null) {
+                  final now = DateTime.now();
+                  final messageDate = lastTime.toDate();
+                  final today = DateTime(now.year, now.month, now.day);
+                  final msgDay = DateTime(messageDate.year, messageDate.month, messageDate.day);
+                  
+                  if (msgDay == today) {
+                    // Today - show time
+                    timeStr = '${messageDate.hour.toString().padLeft(2, '0')}:${messageDate.minute.toString().padLeft(2, '0')}';
+                  } else if (msgDay == today.subtract(const Duration(days: 1))) {
+                    // Yesterday
+                    timeStr = 'Yesterday';
+                  } else if (now.difference(messageDate).inDays < 7) {
+                    // Within a week - show day name
+                    final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                    timeStr = days[messageDate.weekday - 1];
+                  } else {
+                    // Older - show date
+                    timeStr = '${messageDate.day}/${messageDate.month}/${messageDate.year}';
+                  }
+                }
+
+                // Check if there's typing
+                return StreamBuilder<DocumentSnapshot>(
+                  stream: _chatService.getTypingStatus(otherUserId),
+                  builder: (context, typingSnapshot) {
+                    String subtitleText = lastMessage;
+                    bool isTyping = false;
+                    
+                    if (typingSnapshot.hasData && typingSnapshot.data!.exists) {
+                      final typingData = typingSnapshot.data!.data() as Map<String, dynamic>?;
+                      final typing = typingData?['typing'] as Map<String, dynamic>?;
+                      if (typing?[otherUserId] != null) {
+                        subtitleText = 'typing...';
+                        isTyping = true;
+                      }
+                    }
+
+                    return _ChatListTile(
+                      odbc: otherUserId,
+                      userName: userName,
+                      userPhoto: userPhoto,
+                      lastMessage: subtitleText,
+                      timeStr: timeStr,
+                      isTyping: isTyping,
+                      statusService: _statusService,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => DMScreen(
+                              recipientId: otherUserId,
+                              recipientName: userName,
+                              recipientPhoto: userPhoto,
+                            ),
+                          ),
+                        );
+                      },
+                      onStatusTap: (statuses) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ViewStatusScreen(
+                              statuses: statuses,
+                              isOwner: false,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 
