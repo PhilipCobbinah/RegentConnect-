@@ -163,7 +163,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                 // Program Dropdown
                 DropdownButtonFormField<String>(
-                  initialValue: selectedProgram,
+                  value: selectedProgram,
                   isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Program',
@@ -184,7 +184,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                 // Level Dropdown
                 DropdownButtonFormField<int>(
-                  initialValue: selectedLevel,
+                  value: selectedLevel,
                   decoration: const InputDecoration(
                     labelText: 'Level',
                     prefixIcon: Icon(Icons.stairs),
