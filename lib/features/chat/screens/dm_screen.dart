@@ -256,6 +256,101 @@ class _DMScreenState extends State<DMScreen> {
   }
 
   void _startCall(bool isVideo) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: RegentColors.dmSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: RegentColors.violet.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isVideo ? Icons.videocam : Icons.call,
+                color: RegentColors.violet,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                isVideo ? 'Video Call' : 'Voice Call',
+                style: const TextStyle(color: Colors.white, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundColor: RegentColors.violet,
+              backgroundImage: widget.recipientPhoto != null
+                  ? NetworkImage(widget.recipientPhoto!)
+                  : null,
+              child: widget.recipientPhoto == null
+                  ? Text(
+                      widget.recipientName[0].toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              widget.recipientName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isVideo
+                  ? 'Are you sure you want to start a video call with this person?'
+                  : 'Are you sure you want to call this person?',
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white.withOpacity(0.7)),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isVideo ? RegentColors.violet : RegentColors.green,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            icon: Icon(isVideo ? Icons.videocam : Icons.call, size: 18),
+            label: Text(isVideo ? 'Video Call' : 'Call'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Proceed with the call
     final currentUserData = await _chatService.getUserData(_chatService.currentUserId);
     final callerName = currentUserData?['fullName'] ?? currentUserData?['email'] ?? 'Unknown';
     final callerPhoto = currentUserData?['photoUrl'];
