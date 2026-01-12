@@ -1,0 +1,563 @@
+import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
+import '../../../core/theme.dart';
+import '../../../services/status_service.dart';
+
+class ViewStatusScreen extends StatefulWidget {
+  final List<Map<String, dynamic>> statuses;
+  final bool isOwner;
+
+  const ViewStatusScreen({
+    super.key,
+    required this.statuses,
+    required this.isOwner,
+  });
+
+  @override
+  State<ViewStatusScreen> createState() => _ViewStatusScreenState();
+}
+
+class _ViewStatusScreenState extends State<ViewStatusScreen>
+    with SingleTickerProviderStateMixin {
+  final StatusService _statusService = StatusService();
+  
+  int _currentIndex = 0;
+  late AnimationController _progressController;
+  VideoPlayerController? _videoController;
+  bool _isVideoMuted = false; // Track if video is muted by poster
+
+  @override
+  void initState() {
+    super.initState();
+    _progressController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 5),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          _nextStatus();
+        }
+      });
+    
+    _loadStatus();
+  }
+
+  void _loadStatus() {
+    final status = widget.statuses[_currentIndex];
+    
+    // Mark as viewed if not owner
+    if (!widget.isOwner) {
+      _statusService.viewStatus(status['statusId']);
+    }
+
+    _videoController?.dispose();
+    _videoController = null;
+
+    if (status['type'] == 'video' && status['mediaUrl'] != null) {
+      // Check if video was muted by poster
+      _isVideoMuted = status['isMuted'] == true;
+      
+      _videoController = VideoPlayerController.networkUrl(Uri.parse(status['mediaUrl']))
+        ..initialize().then((_) {
+          setState(() {});
+          // Apply mute setting from poster
+          _videoController!.setVolume(_isVideoMuted ? 0 : 1);
+          _videoController!.play();
+          _progressController.duration = _videoController!.value.duration;
+          _progressController.forward(from: 0);
+        });
+    } else {
+      _progressController.duration = const Duration(seconds: 5);
+      _progressController.forward(from: 0);
+    }
+  }
+
+  void _nextStatus() {
+    if (_currentIndex < widget.statuses.length - 1) {
+      setState(() => _currentIndex++);
+      _loadStatus();
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  void _previousStatus() {
+    if (_currentIndex > 0) {
+      setState(() => _currentIndex--);
+      _loadStatus();
+    }
+  }
+
+  @override
+  void dispose() {
+    _progressController.dispose();
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = widget.statuses[_currentIndex];
+
+    return Scaffold(
+      backgroundColor: status['type'] == 'text'
+          ? Color(int.parse(status['backgroundColor']?.replaceFirst('#', '0xFF') ?? '0xFF7C4DFF'))
+          : Colors.black,
+      body: GestureDetector(
+        onTapDown: (details) {
+          final width = MediaQuery.of(context).size.width;
+          if (details.globalPosition.dx < width / 3) {
+            _previousStatus();
+          } else if (details.globalPosition.dx > width * 2 / 3) {
+            _nextStatus();
+          }
+        },
+        onLongPressStart: (_) => _progressController.stop(),
+        onLongPressEnd: (_) => _progressController.forward(),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Status content
+            _buildStatusContent(status),
+            
+            // Top bar
+            SafeArea(
+              child: Column(
+                children: [
+                  // Progress indicators
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Row(
+                      children: List.generate(widget.statuses.length, (index) {
+                        return Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
+                            height: 3,
+                            child: AnimatedBuilder(
+                              animation: _progressController,
+                              builder: (context, child) {
+                                double progress = 0;
+                                if (index < _currentIndex) {
+                                  progress = 1;
+                                } else if (index == _currentIndex) {
+                                  progress = _progressController.value;
+                                }
+                                return LinearProgressIndicator(
+                                  value: progress,
+                                  backgroundColor: Colors.white30,
+                                  valueColor: const AlwaysStoppedAnimation(Colors.white),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                  // User info
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: RegentColors.violet,
+                          backgroundImage: status['userPhoto'] != null
+                              ? NetworkImage(status['userPhoto'])
+                              : null,
+                          child: status['userPhoto'] == null
+                              ? Text(
+                                  (status['userName'] ?? 'U')[0].toUpperCase(),
+                                  style: const TextStyle(color: Colors.white),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                status['userName'] ?? 'Unknown',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                _getTimeAgo(status['createdAt']),
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Bottom bar
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      if (widget.isOwner) ...[
+                        // View count for owner
+                        GestureDetector(
+                          onTap: () => _showViewers(status),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.visibility, color: Colors.white70, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${status['viewCount'] ?? 0}',
+                                style: const TextStyle(color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.white70),
+                          onPressed: () => _deleteStatus(status['statusId']),
+                        ),
+                      ] else ...[
+                        // Reply for viewers
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.white30),
+                              borderRadius: BorderRadius.circular(25),
+                            ),
+                            child: const Text(
+                              'Reply...',
+                              style: TextStyle(color: Colors.white54),
+                            ),
+                          ),
+                        ),
+                        if (status['allowReshare'] == true) ...[
+                          const SizedBox(width: 10),
+                          IconButton(
+                            icon: const Icon(Icons.share, color: Colors.white70),
+                            onPressed: () => _reshareStatus(status['statusId']),
+                          ),
+                        ],
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            
+            // Reshared indicator
+            if (status['isReshared'] == true)
+              Positioned(
+                top: 100,
+                left: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.repeat, color: Colors.white70, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        'From ${status['originalUserName']}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusContent(Map<String, dynamic> status) {
+    final type = status['type'];
+
+    if (type == 'text') {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            status['text'] ?? '',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    } else if (type == 'image') {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          if (status['mediaUrl'] != null)
+            Image.network(
+              status['mediaUrl'],
+              fit: BoxFit.contain,
+            ),
+          if (status['text'] != null && status['text'].isNotEmpty)
+            Positioned(
+              bottom: 100,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  status['text'],
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      );
+    } else {
+      // Video
+      final isMuted = status['isMuted'] == true;
+      
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_videoController != null && _videoController!.value.isInitialized)
+            Center(
+              child: AspectRatio(
+                aspectRatio: _videoController!.value.aspectRatio,
+                child: VideoPlayer(_videoController!),
+              ),
+            )
+          else
+            const Center(child: CircularProgressIndicator(color: Colors.white)),
+          
+          // Muted indicator
+          if (isMuted)
+            Positioned(
+              top: 100,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.volume_off, color: Colors.white, size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      'Muted',
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          
+          if (status['text'] != null && status['text'].isNotEmpty)
+            Positioned(
+              bottom: 100,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  status['text'],
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+  }
+
+  String _getTimeAgo(dynamic timestamp) {
+    if (timestamp == null) return 'Just now';
+    DateTime date;
+    if (timestamp is DateTime) {
+      date = timestamp;
+    } else {
+      date = timestamp.toDate();
+    }
+    final diff = DateTime.now().difference(date);
+
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  void _showViewers(Map<String, dynamic> status) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: RegentColors.dmSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (context, scrollController) {
+          final views = List<Map<String, dynamic>>.from(status['views'] ?? []);
+          
+          return Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 10),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white30,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.visibility, color: Colors.white70),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Viewed by ${views.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: views.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No views yet',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: views.length,
+                        itemBuilder: (context, index) {
+                          final view = views[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: RegentColors.violet,
+                              backgroundImage: view['userPhoto'] != null
+                                  ? NetworkImage(view['userPhoto'])
+                                  : null,
+                              child: view['userPhoto'] == null
+                                  ? Text(
+                                      (view['userName'] ?? 'U')[0].toUpperCase(),
+                                      style: const TextStyle(color: Colors.white),
+                                    )
+                                  : null,
+                            ),
+                            title: Text(
+                              view['userName'] ?? 'Unknown',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            subtitle: Text(
+                              view['viewedAt'] ?? '',
+                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _deleteStatus(String statusId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: RegentColors.dmSurface,
+        title: const Text('Delete Status', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Are you sure you want to delete this status?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await _statusService.deleteStatus(statusId);
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    }
+  }
+
+  void _reshareStatus(String statusId) async {
+    try {
+      await _statusService.reshareStatus(statusId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Status reshared!'),
+            backgroundColor: RegentColors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}

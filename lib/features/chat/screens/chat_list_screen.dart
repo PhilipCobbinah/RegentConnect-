@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:provider/provider.dart';
-import '../../../core/constants.dart';
-import '../../../services/auth_service.dart';
 import '../../../core/theme.dart';
-import '../../../core/theme_provider.dart';
-import '../../../widgets/regent_ai_fab.dart';
-import '../../calls/screens/call_screen.dart';
+import '../../../services/chat_service.dart';
+import '../../../services/status_service.dart';
+import 'dm_screen.dart';
+import '../../status/screens/view_status_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -15,518 +13,401 @@ class ChatListScreen extends StatefulWidget {
   State<ChatListScreen> createState() => _ChatListScreenState();
 }
 
-class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final authService = AuthService();
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() {
-      setState(() {});
-    });
-  }
+class _ChatListScreenState extends State<ChatListScreen> {
+  final _chatService = ChatService();
+  final _statusService = StatusService();
+  final _searchController = TextEditingController();
+  bool _isSearching = false;
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = authService.currentUser?.uid;
-    final themeProvider = Provider.of<ThemeProvider>(context);
-    final isDark = themeProvider.isDarkMode;
-
-    final gradientColor1 = isDark 
-        ? const Color(0xFF1A1A2E) 
-        : const Color(0xFF4A148C);
-    final gradientColor2 = isDark 
-        ? const Color(0xFF16213E) 
-        : const Color(0xFF7B1FA2);
-
     return Scaffold(
+      backgroundColor: RegentColors.dmBackground,
       appBar: AppBar(
-        backgroundColor: gradientColor1,
-        elevation: 0,
-        title: const Text("Regent Connect", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+        backgroundColor: RegentColors.dmSurface,
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'Search chats...',
+                  hintStyle: TextStyle(color: Colors.white54),
+                  border: InputBorder.none,
+                ),
+              )
+            : const Text('Messages', style: TextStyle(color: Colors.white)),
         actions: [
-          Tooltip(
-            message: 'Past Questions',
-            child: IconButton(
-              onPressed: () => Navigator.pushNamed(context, '/past-questions'),
-              icon: const Icon(Icons.library_books, color: Colors.white),
-            ),
-          ),
           IconButton(
-            onPressed: () => _showSearch(context),
-            icon: const Icon(Icons.search, color: Colors.white),
-          ),
-          IconButton(
-            onPressed: () => Navigator.pushNamed(context, '/settings'),
-            icon: const Icon(Icons.more_vert, color: Colors.white),
+            icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.white),
+            onPressed: () {
+              setState(() {
+                _isSearching = !_isSearching;
+                if (!_isSearching) _searchController.clear();
+              });
+            },
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            color: gradientColor2.withOpacity(0.3),
-            height: 1,
-          ),
-        ),
       ),
-      body: Stack(
-        children: [
-          TabBarView(
-            controller: _tabController,
-            children: [
-              _buildChatsTab(currentUserId),
-              _buildStatusTab(),
-              _buildCallsTab(currentUserId),
-            ],
-          ),
-          const RegentAICrystalFab(),
-        ],
-      ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 70),
-        child: FloatingActionButton(
-          backgroundColor: RegentColors.green,
-          heroTag: 'newChatFab',
-          onPressed: () => _handleFabPress(),
-          child: Icon(
-            _getFabIcon(),
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
+      body: StreamBuilder<QuerySnapshot>(
+        // Chat rooms are already ordered by lastMessageTime descending in the service
+        stream: _chatService.getChatRooms(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
+          }
 
-  IconData _getFabIcon() {
-    switch (_tabController.index) {
-      case 0:
-        return Icons.chat;
-      case 1:
-        return Icons.camera_alt;
-      case 2:
-        return Icons.add_call;
-      default:
-        return Icons.chat;
-    }
-  }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator(color: RegentColors.violet));
+          }
 
-  void _handleFabPress() {
-    switch (_tabController.index) {
-      case 0:
-        // Chats tab - show new chat options
-        _showNewChatOptions();
-        break;
-      case 1:
-        // Status tab - go to status screen
-        Navigator.pushNamed(context, '/status');
-        break;
-      case 2:
-        // Calls tab - show new call options
-        _showNewCallOptions();
-        break;
-    }
-  }
+          final chatRooms = snapshot.data!.docs;
 
-  void _showNewChatOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'New Conversation',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: RegentColors.green.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.person, color: RegentColors.green),
-                ),
-                title: const Text('New Chat'),
-                subtitle: const Text('Start a one-on-one conversation'),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Already on chat list, users can tap on any user
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Tap on a user to start chatting')),
-                  );
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.group_add, color: Colors.blue),
-                ),
-                title: const Text('New Group'),
-                subtitle: const Text('Create a study group'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.pushNamed(context, '/create-group');
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.campaign, color: Colors.orange),
-                ),
-                title: const Text('New Broadcast'),
-                subtitle: const Text('Send to multiple contacts'),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Broadcast feature coming soon!')),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showNewCallOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'New Call',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: RegentColors.green.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.call, color: RegentColors.green),
-                ),
-                title: const Text('Voice Call'),
-                subtitle: const Text('Start an audio call'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _tabController.animateTo(0); // Go to chats to select user
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Select a user to call from the chat list')),
-                  );
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.videocam, color: Colors.blue),
-                ),
-                title: const Text('Video Call'),
-                subtitle: const Text('Start a video call'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _tabController.animateTo(0); // Go to chats to select user
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Select a user to video call from the chat list')),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showSearch(BuildContext context) {
-    showSearch(
-      context: context,
-      delegate: _ChatSearchDelegate(authService: authService),
-    );
-  }
-
-  Widget _buildChatsTab(String? currentUserId) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection(AppConstants.usersCollection)
-          .where('uid', isNotEqualTo: currentUserId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.people_outline, size: 64, color: Colors.grey),
-                SizedBox(height: 16),
-                Text('No users found'),
-                SizedBox(height: 8),
-                Text('Invite your classmates to join!', style: TextStyle(color: Colors.grey)),
-              ],
-            ),
-          );
-        }
-
-        final users = snapshot.data!.docs;
-
-        return ListView.separated(
-          padding: const EdgeInsets.only(bottom: 150), // Space for FABs
-          itemCount: users.length,
-          separatorBuilder: (context, index) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final user = users[index].data() as Map<String, dynamic>;
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundImage: user['photoUrl'] != null
-                    ? NetworkImage(user['photoUrl'])
-                    : null,
-                child: user['photoUrl'] == null
-                    ? Text(user['displayName']?[0]?.toUpperCase() ?? '?')
-                    : null,
-              ),
-              title: Text(
-                user['displayName'] ?? 'Unknown',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(user['program'] ?? ''),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
+          if (chatRooms.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (user['isOnline'] == true)
-                    const Padding(
-                      padding: EdgeInsets.only(right: 8),
-                      child: Icon(Icons.circle, color: Colors.green, size: 12),
-                    ),
-                  IconButton(
-                    icon: const Icon(Icons.call, color: RegentColors.blue),
-                    onPressed: () => _startCall(user, isVideo: false),
+                  Icon(Icons.chat_bubble_outline, size: 80, color: RegentColors.violet.withOpacity(0.5)),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No conversations yet',
+                    style: TextStyle(color: Colors.white70, fontSize: 18),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.videocam, color: RegentColors.blue),
-                    onPressed: () => _startCall(user, isVideo: true),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Start a chat with someone!',
+                    style: TextStyle(color: Colors.white54, fontSize: 14),
                   ),
                 ],
               ),
-              onTap: () {
-                Navigator.pushNamed(
-                  context,
-                  '/chat',
-                  arguments: {
-                    'userId': user['uid'],
-                    'userName': user['displayName'],
-                  },
-                );
-              },
             );
-          },
-        );
-      },
-    );
-  }
+          }
 
-  Widget _buildStatusTab() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.donut_large, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text('Status Updates', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 8),
-          const Text('Share what\'s on your mind', style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pushNamed(context, '/status'),
-            icon: const Icon(Icons.add),
-            label: const Text('View Statuses'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: RegentColors.green,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+          return ListView.builder(
+            itemCount: chatRooms.length,
+            itemBuilder: (context, index) {
+              final data = chatRooms[index].data() as Map<String, dynamic>;
+              final participants = List<String>.from(data['participants'] ?? []);
+              final otherUserId = participants.firstWhere(
+                (id) => id != _chatService.currentUserId,
+                orElse: () => '',
+              );
 
-  Widget _buildCallsTab(String? currentUserId) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.call, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text('No recent calls', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 8),
-          const Text('Your call history will appear here', style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              _tabController.animateTo(0);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Select a user to start a call')),
+              if (otherUserId.isEmpty) return const SizedBox();
+
+              return FutureBuilder<Map<String, dynamic>?>(
+                future: _chatService.getUserData(otherUserId),
+                builder: (context, userSnapshot) {
+                  final userData = userSnapshot.data;
+                  final userName = userData?['fullName'] ?? userData?['email'] ?? 'Unknown';
+                  final userPhoto = userData?['photoUrl'];
+                  final lastMessage = data['lastMessage'] ?? '';
+                  final lastTime = data['lastMessageTime'] as Timestamp?;
+                  
+                  // Format time based on how recent
+                  String timeStr = '';
+                  if (lastTime != null) {
+                    final now = DateTime.now();
+                    final messageDate = lastTime.toDate();
+                    final today = DateTime(now.year, now.month, now.day);
+                    final msgDay = DateTime(messageDate.year, messageDate.month, messageDate.day);
+                    
+                    if (msgDay == today) {
+                      // Today - show time
+                      timeStr = '${messageDate.hour.toString().padLeft(2, '0')}:${messageDate.minute.toString().padLeft(2, '0')}';
+                    } else if (msgDay == today.subtract(const Duration(days: 1))) {
+                      // Yesterday
+                      timeStr = 'Yesterday';
+                    } else if (now.difference(messageDate).inDays < 7) {
+                      // Within a week - show day name
+                      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                      timeStr = days[messageDate.weekday - 1];
+                    } else {
+                      // Older - show date
+                      timeStr = '${messageDate.day}/${messageDate.month}/${messageDate.year}';
+                    }
+                  }
+
+                  // Check if there's typing
+                  return StreamBuilder<DocumentSnapshot>(
+                    stream: _chatService.getTypingStatus(otherUserId),
+                    builder: (context, typingSnapshot) {
+                      String subtitleText = lastMessage;
+                      bool isTyping = false;
+                      
+                      if (typingSnapshot.hasData && typingSnapshot.data!.exists) {
+                        final typingData = typingSnapshot.data!.data() as Map<String, dynamic>?;
+                        final typing = typingData?['typing'] as Map<String, dynamic>?;
+                        if (typing?[otherUserId] != null) {
+                          subtitleText = 'typing...';
+                          isTyping = true;
+                        }
+                      }
+
+                      return _ChatListTile(
+                        odbc: otherUserId,
+                        userName: userName,
+                        userPhoto: userPhoto,
+                        lastMessage: subtitleText,
+                        timeStr: timeStr,
+                        isTyping: isTyping,
+                        statusService: _statusService,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DMScreen(
+                                recipientId: otherUserId,
+                                recipientName: userName,
+                                recipientPhoto: userPhoto,
+                              ),
+                            ),
+                          );
+                        },
+                        onStatusTap: (statuses) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ViewStatusScreen(
+                                statuses: statuses,
+                                isOwner: false,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
               );
             },
-            icon: const Icon(Icons.add_call),
-            label: const Text('Start a Call'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: RegentColors.green,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: RegentColors.violet,
+        child: const Icon(Icons.chat, color: Colors.white),
+        onPressed: () => _showUsersList(context),
       ),
     );
   }
 
-  void _startCall(Map<String, dynamic> user, {required bool isVideo}) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CallScreen(
-          recipientId: user['uid'],
-          recipientName: user['displayName'] ?? 'Unknown',
-          recipientPhotoUrl: user['photoUrl'],
-          isVideoCall: isVideo,
+  void _showUsersList(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: RegentColors.dmSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) => Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 10),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white30,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Start a conversation',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance.collection('users').snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator(color: RegentColors.violet));
+                  }
+
+                  final users = snapshot.data!.docs.where((doc) => doc.id != _chatService.currentUserId).toList();
+
+                  return ListView.builder(
+                    controller: scrollController,
+                    itemCount: users.length,
+                    itemBuilder: (context, index) {
+                      final userData = users[index].data() as Map<String, dynamic>;
+                      final odbc = users[index].id;
+                      final userName = userData['fullName'] ?? userData['email'] ?? 'Unknown';
+                      final userPhoto = userData['photoUrl'];
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: RegentColors.violet,
+                          backgroundImage: userPhoto != null ? NetworkImage(userPhoto) : null,
+                          child: userPhoto == null
+                              ? Text(userName[0].toUpperCase(), style: const TextStyle(color: Colors.white))
+                              : null,
+                        ),
+                        title: Text(userName, style: const TextStyle(color: Colors.white)),
+                        subtitle: Text(userData['email'] ?? '', style: const TextStyle(color: Colors.white54)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DMScreen(
+                                recipientId: userId,
+                                recipientName: userName,
+                                recipientPhoto: userPhoto,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// Search Delegate for Chat
-class _ChatSearchDelegate extends SearchDelegate {
-  final AuthService authService;
+// Separate widget to handle status checking for each chat tile
+class _ChatListTile extends StatelessWidget {
+  final String odbc;
+  final String userName;
+  final String? userPhoto;
+  final String lastMessage;
+  final String timeStr;
+  final bool isTyping;
+  final StatusService statusService;
+  final VoidCallback onTap;
+  final Function(List<Map<String, dynamic>>) onStatusTap;
 
-  _ChatSearchDelegate({required this.authService});
-
-  @override
-  List<Widget>? buildActions(BuildContext context) {
-    return [
-      IconButton(
-        icon: const Icon(Icons.clear),
-        onPressed: () => query = '',
-      ),
-    ];
-  }
-
-  @override
-  Widget? buildLeading(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.arrow_back),
-      onPressed: () => close(context, null),
-    );
-  }
-
-  @override
-  Widget buildResults(BuildContext context) {
-    return _buildSearchResults();
-  }
+  const _ChatListTile({
+    required this.odbc,
+    required this.userName,
+    required this.userPhoto,
+    required this.lastMessage,
+    required this.timeStr,
+    this.isTyping = false,
+    required this.statusService,
+    required this.onTap,
+    required this.onStatusTap,
+  });
 
   @override
-  Widget buildSuggestions(BuildContext context) {
-    if (query.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('Search for users', style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      );
-    }
-    return _buildSearchResults();
-  }
-
-  Widget _buildSearchResults() {
+  Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection(AppConstants.usersCollection)
-          .where('uid', isNotEqualTo: authService.currentUser?.uid)
+          .collection('statuses')
+          .where('userId', isEqualTo: odbc)
+          .where('expiresAt', isGreaterThan: Timestamp.now())
           .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+      builder: (context, statusSnapshot) {
+        final hasStatus = statusSnapshot.hasData && statusSnapshot.data!.docs.isNotEmpty;
+        final statuses = hasStatus
+            ? statusSnapshot.data!.docs.map((doc) => doc.data() as Map<String, dynamic>).toList()
+            : <Map<String, dynamic>>[];
+
+        bool hasUnviewedStatus = false;
+        if (hasStatus) {
+          for (var status in statuses) {
+            final views = List<Map<String, dynamic>>.from(status['views'] ?? []);
+            final hasViewed = views.any((view) => view['userId'] == statusService.currentUserId);
+            if (!hasViewed) {
+              hasUnviewedStatus = true;
+              break;
+            }
+          }
         }
 
-        final users = snapshot.data!.docs.where((doc) {
-          final user = doc.data() as Map<String, dynamic>;
-          final name = (user['displayName'] ?? '').toString().toLowerCase();
-          final program = (user['program'] ?? '').toString().toLowerCase();
-          return name.contains(query.toLowerCase()) || program.contains(query.toLowerCase());
-        }).toList();
-
-        if (users.isEmpty) {
-          return Center(
-            child: Text('No results for "$query"'),
-          );
-        }
-
-        return ListView.builder(
-          itemCount: users.length,
-          itemBuilder: (context, index) {
-            final user = users[index].data() as Map<String, dynamic>;
-            return ListTile(
-              leading: CircleAvatar(
-                child: Text(user['displayName']?[0]?.toUpperCase() ?? '?'),
+        return ListTile(
+          leading: GestureDetector(
+            onTap: hasStatus ? () => onStatusTap(statuses) : null,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: hasStatus
+                  ? BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: hasUnviewedStatus
+                            ? [RegentColors.violet, RegentColors.darkViolet, RegentColors.lightViolet]
+                            : [Colors.grey, Colors.grey.shade600],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    )
+                  : null,
+              child: Container(
+                padding: hasStatus ? const EdgeInsets.all(2) : EdgeInsets.zero,
+                decoration: hasStatus
+                    ? const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: RegentColors.dmBackground,
+                      )
+                    : null,
+                child: CircleAvatar(
+                  radius: 24,
+                  backgroundColor: RegentColors.violet,
+                  backgroundImage: userPhoto != null ? NetworkImage(userPhoto!) : null,
+                  child: userPhoto == null
+                      ? Text(
+                          userName[0].toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                        )
+                      : null,
+                ),
               ),
-              title: Text(user['displayName'] ?? 'Unknown'),
-              subtitle: Text(user['program'] ?? ''),
-              onTap: () {
-                close(context, null);
-                Navigator.pushNamed(
-                  context,
-                  '/chat',
-                  arguments: {
-                    'userId': user['uid'],
-                    'userName': user['displayName'],
-                  },
-                );
-              },
-            );
-          },
+            ),
+          ),
+          title: Text(
+            userName,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            lastMessage,
+            style: TextStyle(
+              color: isTyping ? RegentColors.lightViolet : Colors.white54,
+              fontStyle: isTyping ? FontStyle.italic : FontStyle.normal,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                timeStr,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              if (hasStatus && hasUnviewedStatus)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: RegentColors.violet,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+          onTap: onTap,
         );
       },
     );

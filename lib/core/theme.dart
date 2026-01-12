@@ -9,6 +9,13 @@ class RegentColors {
   static const Color grey = Color(0xFF757575);
   static const Color white = Colors.white;
   static const Color black = Colors.black;
+  // New violet/purple colors for DM
+  static const Color violet = Color(0xFF7C4DFF);
+  static const Color darkViolet = Color(0xFF651FFF);
+  static const Color lightViolet = Color(0xFFB388FF);
+  static const Color dmBackground = Color(0xFF1A1A2E);
+  static const Color dmSurface = Color(0xFF16213E);
+  static const Color dmCard = Color(0xFF0F3460);
 }
 
 class AppTheme {

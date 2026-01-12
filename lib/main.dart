@@ -16,6 +16,7 @@ import 'features/settings/screens/settings_screen.dart';
 import 'features/users/screens/users_screen.dart';
 import 'services/auth_service.dart';
 import 'features/broadcast/screens/broadcast_screen.dart';
+import 'widgets/incoming_call_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,7 +44,9 @@ class MyApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-          home: const AuthWrapper(),
+          home: const IncomingCallOverlay(
+            child: AuthWrapper(),
+          ),
           routes: {
             '/login': (context) => const LoginScreen(),
             '/register': (context) => const RegisterScreen(),

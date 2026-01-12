@@ -56,17 +56,11 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
-    
-    final gradientColor1 = isDark 
-        ? const Color(0xFF1A1A2E) 
-        : const Color(0xFF4A148C);
-    final gradientColor2 = isDark 
-        ? const Color(0xFF16213E) 
-        : const Color(0xFF7B1FA2);
 
     return Scaffold(
+      backgroundColor: RegentColors.dmBackground,
       appBar: AppBar(
-        backgroundColor: gradientColor1,
+        backgroundColor: RegentColors.dmSurface,
         elevation: 0,
         title: const Text('Past Questions', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -88,13 +82,28 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
                   title: 'Select Faculty',
                   icon: Icons.school,
                   child: DropdownButtonFormField<FacultyData>(
-                    initialValue: selectedFaculty,
+                    value: selectedFaculty,
                     isExpanded: true,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    dropdownColor: RegentColors.dmCard,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: RegentColors.violet, width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      filled: true,
+                      fillColor: RegentColors.dmCard,
                     ),
-                    hint: const Text('Choose your faculty'),
+                    hint: const Text('Choose your faculty', style: TextStyle(color: Colors.white54)),
                     items: universityFaculties.map((faculty) {
                       return DropdownMenuItem(
                         value: faculty,
@@ -115,13 +124,28 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
                     title: 'Select Program',
                     icon: Icons.book,
                     child: DropdownButtonFormField<ProgramData>(
-                      initialValue: selectedProgram,
+                      value: selectedProgram,
                       isExpanded: true,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      dropdownColor: RegentColors.dmCard,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: RegentColors.violet, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        filled: true,
+                        fillColor: RegentColors.dmCard,
                       ),
-                      hint: const Text('Choose your program'),
+                      hint: const Text('Choose your program', style: TextStyle(color: Colors.white54)),
                       items: selectedFaculty!.programs.map((program) {
                         return DropdownMenuItem(
                           value: program,
@@ -143,13 +167,28 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
                     title: 'Select Option',
                     icon: Icons.category,
                     child: DropdownButtonFormField<String>(
-                      initialValue: selectedOption,
+                      value: selectedOption,
                       isExpanded: true,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      dropdownColor: RegentColors.dmCard,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: RegentColors.violet, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        filled: true,
+                        fillColor: RegentColors.dmCard,
                       ),
-                      hint: const Text('Choose your option'),
+                      hint: const Text('Choose your option', style: TextStyle(color: Colors.white54)),
                       items: selectedProgram!.options!.map((option) {
                         return DropdownMenuItem(
                           value: option,
@@ -172,12 +211,27 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
                     title: 'Select Level',
                     icon: Icons.stairs,
                     child: DropdownButtonFormField<int>(
-                      initialValue: selectedLevel,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      value: selectedLevel,
+                      dropdownColor: RegentColors.dmCard,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: RegentColors.violet, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        filled: true,
+                        fillColor: RegentColors.dmCard,
                       ),
-                      hint: const Text('Choose your level'),
+                      hint: const Text('Choose your level', style: TextStyle(color: Colors.white54)),
                       items: levels.map((level) {
                         return DropdownMenuItem(
                           value: level,
@@ -199,12 +253,27 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
                     title: 'Select Semester',
                     icon: Icons.calendar_today,
                     child: DropdownButtonFormField<int>(
-                      initialValue: selectedSemester,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      value: selectedSemester,
+                      dropdownColor: RegentColors.dmCard,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: RegentColors.violet.withOpacity(0.5)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: RegentColors.violet, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        filled: true,
+                        fillColor: RegentColors.dmCard,
                       ),
-                      hint: const Text('Choose semester'),
+                      hint: const Text('Choose semester', style: TextStyle(color: Colors.white54)),
                       items: semesters.map((semester) {
                         return DropdownMenuItem(
                           value: semester,
@@ -228,8 +297,8 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
               ],
             ),
           ),
-          // Regent AI Floating Button
-          const RegentAICrystalFab(),
+          // Regent AI Floating Button - with proper bottomOffset like home screen
+          const RegentAICrystalFab(bottomOffset: 80),
         ],
       ),
     );
@@ -241,9 +310,18 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [RegentColors.blue, RegentColors.blue.withOpacity(0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [RegentColors.violet, RegentColors.darkViolet],
         ),
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: RegentColors.violet.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: const Column(
         children: [
@@ -273,8 +351,12 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
     required IconData icon,
     required Widget child,
   }) {
-    return Card(
-      elevation: 2,
+    return Container(
+      decoration: BoxDecoration(
+        color: RegentColors.dmSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: RegentColors.violet.withOpacity(0.2)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -282,13 +364,14 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
           children: [
             Row(
               children: [
-                Icon(icon, color: RegentColors.blue, size: 20),
+                Icon(icon, color: RegentColors.violet, size: 20),
                 const SizedBox(width: 8),
                 Text(
                   title,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
+                    color: Colors.white,
                   ),
                 ),
               ],
@@ -302,28 +385,32 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
   }
 
   Widget _buildSelectionSummary() {
-    return Card(
-      color: RegentColors.blue.withOpacity(0.1),
+    return Container(
+      decoration: BoxDecoration(
+        color: RegentColors.violet.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: RegentColors.violet.withOpacity(0.3)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.info_outline, color: RegentColors.blue),
-                SizedBox(width: 8),
+                Icon(Icons.info_outline, color: RegentColors.violet),
+                const SizedBox(width: 8),
                 Text(
                   'Your Selection',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
-                    color: RegentColors.blue,
+                    color: RegentColors.violet,
                   ),
                 ),
               ],
             ),
-            const Divider(),
+            Divider(color: RegentColors.violet.withOpacity(0.3)),
             _buildSummaryRow('Faculty', selectedFaculty?.name ?? ''),
             _buildSummaryRow('Program', selectedProgram?.name ?? ''),
             if (selectedOption != null)
@@ -348,14 +435,14 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
               '$label:',
               style: const TextStyle(
                 fontWeight: FontWeight.w500,
-                color: Colors.grey,
+                color: Colors.white54,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontWeight: FontWeight.w500),
+              style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.white),
             ),
           ),
         ],
@@ -393,7 +480,7 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
             icon: const Icon(Icons.visibility),
             label: const Text('View Past Questions'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: RegentColors.blue,
+              backgroundColor: RegentColors.violet,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
@@ -412,8 +499,8 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
             icon: const Icon(Icons.download),
             label: const Text('Download Past Questions'),
             style: OutlinedButton.styleFrom(
-              foregroundColor: RegentColors.blue,
-              side: const BorderSide(color: RegentColors.blue),
+              foregroundColor: RegentColors.violet,
+              side: const BorderSide(color: RegentColors.violet),
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -475,10 +562,10 @@ class _PastQuestionsScreenState extends State<PastQuestionsScreen> {
   }
 }
 
-// My Uploads Screen
+// My Uploads Screen - also update to violet/black theme
 class MyUploadsScreen extends StatelessWidget {
   final String userId;
-  
+
   const MyUploadsScreen({super.key, required this.userId});
 
   @override
@@ -486,8 +573,9 @@ class MyUploadsScreen extends StatelessWidget {
     final service = PastQuestionsService();
 
     return Scaffold(
+      backgroundColor: RegentColors.dmBackground,
       appBar: AppBar(
-        backgroundColor: RegentColors.blue,
+        backgroundColor: RegentColors.dmSurface,
         title: const Text('My Uploads', style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -495,21 +583,21 @@ class MyUploadsScreen extends StatelessWidget {
         stream: service.getUserUploadedQuestions(userId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator(color: RegentColors.violet));
           }
 
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.upload_file, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text('No uploads yet'),
-                  SizedBox(height: 8),
-                  Text(
+                  Icon(Icons.upload_file, size: 64, color: RegentColors.violet.withOpacity(0.5)),
+                  const SizedBox(height: 16),
+                  const Text('No uploads yet', style: TextStyle(color: Colors.white)),
+                  const SizedBox(height: 8),
+                  const Text(
                     'Your uploaded past questions will appear here',
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(color: Colors.white54),
                   ),
                 ],
               ),
@@ -531,8 +619,13 @@ class MyUploadsScreen extends StatelessWidget {
   }
 
   Widget _buildUploadCard(BuildContext context, PastQuestionModel question, PastQuestionsService service) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: RegentColors.dmSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: RegentColors.violet.withOpacity(0.2)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -548,23 +641,26 @@ class MyUploadsScreen extends StatelessWidget {
                     children: [
                       Text(
                         question.courseName,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       Text(
                         '${question.courseCode} • ${question.year}',
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                     ],
                   ),
                 ),
                 PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.white54),
+                  color: RegentColors.dmCard,
                   onSelected: (value) async {
                     if (value == 'delete') {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: const Text('Delete Upload'),
-                          content: const Text('Are you sure you want to delete this past question?'),
+                          backgroundColor: RegentColors.dmSurface,
+                          title: const Text('Delete Upload', style: TextStyle(color: Colors.white)),
+                          content: const Text('Are you sure you want to delete this past question?', style: TextStyle(color: Colors.white70)),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
@@ -594,7 +690,7 @@ class MyUploadsScreen extends StatelessWidget {
                         children: [
                           Icon(Icons.delete, color: Colors.red),
                           SizedBox(width: 8),
-                          Text('Delete'),
+                          Text('Delete', style: TextStyle(color: Colors.white)),
                         ],
                       ),
                     ),
@@ -602,23 +698,23 @@ class MyUploadsScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const Divider(),
+            Divider(color: RegentColors.violet.withOpacity(0.2)),
             Text(
               'Level ${question.level} • Semester ${question.semester}',
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
             ),
             Text(
               question.programName,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: const TextStyle(fontSize: 12, color: Colors.white54),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.download, size: 14, color: Colors.grey),
+                Icon(Icons.download, size: 14, color: RegentColors.violet),
                 const SizedBox(width: 4),
                 Text(
                   '${question.downloadCount} downloads',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: RegentColors.lightViolet),
                 ),
               ],
             ),
@@ -631,7 +727,7 @@ class MyUploadsScreen extends StatelessWidget {
   Widget _getFileIcon(String fileType) {
     IconData icon;
     Color color;
-    
+
     switch (fileType.toLowerCase()) {
       case 'pdf':
         icon = Icons.picture_as_pdf;
@@ -640,19 +736,19 @@ class MyUploadsScreen extends StatelessWidget {
       case 'doc':
       case 'docx':
         icon = Icons.description;
-        color = Colors.blue;
+        color = RegentColors.violet;
         break;
       case 'png':
       case 'jpg':
       case 'jpeg':
         icon = Icons.image;
-        color = Colors.green;
+        color = RegentColors.green;
         break;
       default:
         icon = Icons.insert_drive_file;
         color = Colors.grey;
     }
-    
+
     return Icon(icon, color: color, size: 40);
   }
 }

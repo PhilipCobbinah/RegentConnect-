@@ -1,172 +1,210 @@
-import 'dart:typed_data';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import '../models/status_model.dart';
 
 class StatusService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
-  static const String _collection = 'statuses';
 
-  // Post text status
-  Future<String?> postTextStatus({
-    required String odId,
-    required String content,
-    required String posterName,
-    String? posterPhotoUrl,
-    String backgroundColor = '#1565C0',
+  String get currentUserId => _auth.currentUser?.uid ?? '';
+  String get currentUserEmail => _auth.currentUser?.email ?? '';
+
+  // Post a new status
+  Future<void> postStatus({
+    required String type, // 'text', 'image', 'video'
+    String? text,
+    String? mediaUrl,
+    String? backgroundColor,
+    bool allowReshare = true,
+    bool isMuted = false, // New: for video statuses
   }) async {
-    try {
-      final now = DateTime.now();
-      final expiresAt = now.add(const Duration(hours: 24));
+    if (currentUserId.isEmpty) return;
 
-      final docRef = await _firestore.collection(_collection).add({
-        'odId': odId,
-        'postedBy': odId,
-        'posterName': posterName,
-        'posterPhotoUrl': posterPhotoUrl,
-        'content': content,
-        'type': 'text',
-        'backgroundColor': backgroundColor,
-        'createdAt': Timestamp.fromDate(now),
-        'expiresAt': Timestamp.fromDate(expiresAt),
-        'viewedBy': [],
-      });
+    // Get user data
+    final userDoc = await _firestore.collection('users').doc(currentUserId).get();
+    final userData = userDoc.data() ?? {};
 
-      return docRef.id;
-    } catch (e) {
-      print('Error posting status: $e');
-      return null;
-    }
+    final statusId = '${currentUserId}_${DateTime.now().millisecondsSinceEpoch}';
+    final expiresAt = DateTime.now().add(const Duration(hours: 24));
+
+    final statusData = {
+      'statusId': statusId,
+      'userId': currentUserId,
+      'userName': userData['fullName'] ?? userData['email'] ?? 'Unknown',
+      'userPhoto': userData['photoUrl'],
+      'type': type,
+      'text': text,
+      'mediaUrl': mediaUrl,
+      'backgroundColor': backgroundColor ?? '#7C4DFF',
+      'allowReshare': allowReshare,
+      'isMuted': isMuted, // New field
+      'views': [],
+      'viewCount': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+      'expiresAt': Timestamp.fromDate(expiresAt),
+    };
+
+    await _firestore.collection('statuses').doc(statusId).set(statusData);
   }
 
-  // Post image status
-  Future<String?> postImageStatus({
-    required String odId,
-    required String posterName,
-    String? posterPhotoUrl,
-    required Uint8List imageBytes,
-    required String fileName,
-  }) async {
+  // Upload media for status
+  Future<String?> uploadStatusMedia(File file, String type) async {
     try {
-      // Upload image
-      final storagePath = 'statuses/$odId/${DateTime.now().millisecondsSinceEpoch}_$fileName';
-      final ref = _storage.ref().child(storagePath);
-      await ref.putData(imageBytes);
-      final imageUrl = await ref.getDownloadURL();
-
-      final now = DateTime.now();
-      final expiresAt = now.add(const Duration(hours: 24));
-
-      final docRef = await _firestore.collection(_collection).add({
-        'odId': odId,
-        'postedBy': odId,
-        'posterName': posterName,
-        'posterPhotoUrl': posterPhotoUrl,
-        'content': imageUrl,
-        'type': 'image',
-        'createdAt': Timestamp.fromDate(now),
-        'expiresAt': Timestamp.fromDate(expiresAt),
-        'viewedBy': [],
-      });
-
-      return docRef.id;
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+      final ref = _storage.ref().child('status_media/$currentUserId/$type/$fileName');
+      await ref.putFile(file);
+      return await ref.getDownloadURL();
     } catch (e) {
-      print('Error posting image status: $e');
+      print('Error uploading status media: $e');
       return null;
     }
   }
 
   // Get all active statuses (not expired)
-  Stream<List<StatusModel>> getActiveStatuses() {
-    final now = DateTime.now();
+  Stream<QuerySnapshot> getAllStatuses() {
+    final now = Timestamp.now();
     return _firestore
-        .collection(_collection)
-        .where('expiresAt', isGreaterThan: Timestamp.fromDate(now))
+        .collection('statuses')
+        .where('expiresAt', isGreaterThan: now)
         .orderBy('expiresAt')
         .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return StatusModel.fromMap(doc.data(), doc.id);
-      }).toList();
-    });
+        .snapshots();
   }
 
-  // Get user's statuses
-  Stream<List<StatusModel>> getUserStatuses(String odId) {
-    final now = DateTime.now();
-    return _firestore
-        .collection(_collection)
-        .where('postedBy', isEqualTo: odId)
-        .where('expiresAt', isGreaterThan: Timestamp.fromDate(now))
+  // Get statuses grouped by user
+  Future<Map<String, List<Map<String, dynamic>>>> getStatusesGroupedByUser() async {
+    final now = Timestamp.now();
+    final snapshot = await _firestore
+        .collection('statuses')
+        .where('expiresAt', isGreaterThan: now)
         .orderBy('expiresAt')
         .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return StatusModel.fromMap(doc.data(), doc.id);
-      }).toList();
-    });
-  }
-
-  // Mark status as viewed
-  Future<void> markAsViewed(String statusId, String odId) async {
-    await _firestore.collection(_collection).doc(statusId).update({
-      'viewedBy': FieldValue.arrayUnion([odId]),
-    });
-  }
-
-  // Delete status
-  Future<bool> deleteStatus(String statusId, String? imageUrl) async {
-    try {
-      if (imageUrl != null && imageUrl.contains('firebase')) {
-        await _storage.refFromURL(imageUrl).delete();
-      }
-      await _firestore.collection(_collection).doc(statusId).delete();
-      return true;
-    } catch (e) {
-      print('Error deleting status: $e');
-      return false;
-    }
-  }
-
-  // Clean up expired statuses (can be called periodically)
-  Future<void> cleanupExpiredStatuses() async {
-    final now = DateTime.now();
-    final expired = await _firestore
-        .collection(_collection)
-        .where('expiresAt', isLessThan: Timestamp.fromDate(now))
         .get();
 
-    for (var doc in expired.docs) {
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    
+    for (var doc in snapshot.docs) {
       final data = doc.data();
-      if (data['type'] == 'image') {
-        try {
-          await _storage.refFromURL(data['content']).delete();
-        } catch (_) {}
+      final odbc = data['userId'] as String;
+      if (!grouped.containsKey(userId)) {
+        grouped[userId] = [];
       }
-      await doc.reference.delete();
-    }
-  }
-
-  // Like/Unlike status
-  Future<void> toggleLikeStatus(String statusId, String userId) async {
-    final statusDoc = await _firestore.collection('statuses').doc(statusId).get();
-    final likedBy = List<String>.from(statusDoc['likedBy'] ?? []);
-
-    if (likedBy.contains(userId)) {
-      likedBy.remove(userId);
-    } else {
-      likedBy.add(userId);
+      grouped[userId]!.add(data);
     }
 
-    await _firestore.collection('statuses').doc(statusId).update({'likedBy': likedBy});
+    return grouped;
   }
 
-  // Get like count
-  Future<int> getLikeCount(String statusId) async {
+  // Get current user's statuses
+  Stream<QuerySnapshot> getMyStatuses() {
+    final now = Timestamp.now();
+    return _firestore
+        .collection('statuses')
+        .where('userId', isEqualTo: currentUserId)
+        .where('expiresAt', isGreaterThan: now)
+        .orderBy('expiresAt')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
+  // View a status (add current user to views)
+  Future<void> viewStatus(String statusId) async {
+    if (currentUserId.isEmpty) return;
+
+    final statusRef = _firestore.collection('statuses').doc(statusId);
+    final statusDoc = await statusRef.get();
+    
+    if (!statusDoc.exists) return;
+    
+    final data = statusDoc.data()!;
+    final views = List<Map<String, dynamic>>.from(data['views'] ?? []);
+    
+    // Check if already viewed
+    final alreadyViewed = views.any((view) => view['userId'] == currentUserId);
+    if (alreadyViewed) return;
+
+    // Get current user data
+    final userDoc = await _firestore.collection('users').doc(currentUserId).get();
+    final userData = userDoc.data() ?? {};
+
+    // Add view
+    views.add({
+      'userId': currentUserId,
+      'userName': userData['fullName'] ?? userData['email'] ?? 'Unknown',
+      'userPhoto': userData['photoUrl'],
+      'viewedAt': DateTime.now().toIso8601String(),
+    });
+
+    await statusRef.update({
+      'views': views,
+      'viewCount': views.length,
+    });
+  }
+
+  // Get viewers of a status
+  Future<List<Map<String, dynamic>>> getStatusViewers(String statusId) async {
     final doc = await _firestore.collection('statuses').doc(statusId).get();
-    return (doc['likedBy'] as List).length;
+    if (!doc.exists) return [];
+    
+    final data = doc.data()!;
+    return List<Map<String, dynamic>>.from(data['views'] ?? []);
+  }
+
+  // Reshare a status
+  Future<void> reshareStatus(String originalStatusId) async {
+    if (currentUserId.isEmpty) return;
+
+    final originalDoc = await _firestore.collection('statuses').doc(originalStatusId).get();
+    if (!originalDoc.exists) return;
+
+    final originalData = originalDoc.data()!;
+    
+    // Check if reshare is allowed
+    if (originalData['allowReshare'] != true) {
+      throw Exception('This status cannot be reshared');
+    }
+
+    // Get current user data
+    final userDoc = await _firestore.collection('users').doc(currentUserId).get();
+    final userData = userDoc.data() ?? {};
+
+    final statusId = '${currentUserId}_${DateTime.now().millisecondsSinceEpoch}';
+    final expiresAt = DateTime.now().add(const Duration(hours: 24));
+
+    final resharedStatus = {
+      'statusId': statusId,
+      'userId': currentUserId,
+      'userName': userData['fullName'] ?? userData['email'] ?? 'Unknown',
+      'userPhoto': userData['photoUrl'],
+      'type': originalData['type'],
+      'text': originalData['text'],
+      'mediaUrl': originalData['mediaUrl'],
+      'backgroundColor': originalData['backgroundColor'],
+      'allowReshare': originalData['allowReshare'],
+      'isReshared': true,
+      'originalStatusId': originalStatusId,
+      'originalUserId': originalData['userId'],
+      'originalUserName': originalData['userName'],
+      'views': [],
+      'viewCount': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+      'expiresAt': Timestamp.fromDate(expiresAt),
+    };
+
+    await _firestore.collection('statuses').doc(statusId).set(resharedStatus);
+  }
+
+  // Delete a status
+  Future<void> deleteStatus(String statusId) async {
+    await _firestore.collection('statuses').doc(statusId).delete();
+  }
+
+  // Update reshare settings
+  Future<void> updateReshareSettings(String statusId, bool allowReshare) async {
+    await _firestore.collection('statuses').doc(statusId).update({
+      'allowReshare': allowReshare,
+    });
   }
 }
