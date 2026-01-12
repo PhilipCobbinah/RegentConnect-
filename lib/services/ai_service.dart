@@ -96,6 +96,27 @@ Be educational and helpful in your response.'''),
     }
   }
 
+  // Transcribe audio and respond
+  Future<String> transcribeAudio(Uint8List audioBytes) async {
+    try {
+      // If using Google's Generative AI or OpenAI Whisper
+      // For now, return a placeholder message
+      // You can integrate with actual transcription service here
+      
+      return '''I received your audio message! 🎤
+
+Unfortunately, audio transcription requires additional setup. Here's what you can do:
+
+1. **Type your question** - I can help you right away
+2. **Take a photo** - If it's about a problem or diagram
+3. **Try again later** - Audio features are being enhanced
+
+What would you like help with?''';
+    } catch (e) {
+      throw Exception('Failed to process audio: $e');
+    }
+  }
+
   void resetChat() {
     _chatSession = _model.startChat();
   }
