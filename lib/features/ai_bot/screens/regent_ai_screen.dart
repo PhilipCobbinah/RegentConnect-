@@ -21,6 +21,10 @@ class _RegentAIScreenState extends State<RegentAIScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   bool _isLoading = false;
 
+  // New: for image preview before sending
+  Uint8List? _pendingImageData;
+  String? _pendingImageSource;
+
   @override
   void initState() {
     super.initState();
@@ -114,7 +118,8 @@ How can I assist you today?''',
       );
 
       if (image != null) {
-        await _processImage(await image.readAsBytes(), 'camera');
+        final imageBytes = await image.readAsBytes();
+        _showImagePreview(imageBytes, 'camera');
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -131,7 +136,8 @@ How can I assist you today?''',
       );
 
       if (image != null) {
-        await _processImage(await image.readAsBytes(), 'gallery');
+        final imageBytes = await image.readAsBytes();
+        _showImagePreview(imageBytes, 'gallery');
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -140,23 +146,51 @@ How can I assist you today?''',
     }
   }
 
-  Future<void> _processImage(Uint8List imageBytes, String source) async {
+  void _showImagePreview(Uint8List imageBytes, String source) {
+    setState(() {
+      _pendingImageData = imageBytes;
+      _pendingImageSource = source;
+    });
+  }
+
+  void _cancelImagePreview() {
+    setState(() {
+      _pendingImageData = null;
+      _pendingImageSource = null;
+      _messageController.clear();
+    });
+  }
+
+  Future<void> _sendImageWithMessage() async {
+    if (_pendingImageData == null || _isLoading) return;
+
+    final userMessage = _messageController.text.trim();
+    final imageData = _pendingImageData!;
+    final source = _pendingImageSource ?? 'image';
+
     setState(() {
       _messages.add(ChatMessage(
-        content: 'Image uploaded from $source',
+        content: userMessage.isNotEmpty ? userMessage : 'Analyze this image',
         isUser: true,
         timestamp: DateTime.now(),
-        imageData: imageBytes,
+        imageData: imageData,
       ));
+      _pendingImageData = null;
+      _pendingImageSource = null;
+      _messageController.clear();
       _isLoading = true;
     });
 
     _scrollToBottom();
 
     try {
-      // Send image to AI for analysis
-      final response = await _aiService.analyzeImage(imageBytes, 'image/jpeg');
-      
+      // Send image to AI for analysis with user's message
+      final response = await _aiService.analyzeImageWithPrompt(
+        imageData, 
+        'image/jpeg',
+        userMessage.isNotEmpty ? userMessage : 'Please analyze this image and provide helpful information.',
+      );
+
       setState(() {
         _messages.add(ChatMessage(
           content: response,
@@ -370,7 +404,10 @@ How can I assist you today?''',
           ),
 
           // Quick Actions
-          if (_messages.length <= 1) _buildQuickActions(),
+          if (_messages.length <= 1 && _pendingImageData == null) _buildQuickActions(),
+
+          // Image Preview (when image is selected)
+          if (_pendingImageData != null) _buildImagePreview(),
 
           // Input Field
           _buildInputField(),
@@ -581,7 +618,150 @@ How can I assist you today?''',
     );
   }
 
+  Widget _buildImagePreview() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        border: Border(
+          top: BorderSide(color: Colors.grey[300]!),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.image, color: Colors.purple, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Image ready to send',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.purple,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.grey),
+                onPressed: _cancelImagePreview,
+                tooltip: 'Remove image',
+                constraints: const BoxConstraints(),
+                padding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Image thumbnail
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(
+                  _pendingImageData!,
+                  width: 80,
+                  height: 80,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Message input for image
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Add a message (optional):',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                      ),
+                      child: TextField(
+                        controller: _messageController,
+                        maxLines: 2,
+                        minLines: 1,
+                        decoration: const InputDecoration(
+                          hintText: 'E.g., "Solve this math problem" or "Explain this diagram"',
+                          hintStyle: TextStyle(fontSize: 12, color: Colors.grey),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Send button
+              Container(
+                decoration: const BoxDecoration(
+                  color: Colors.purple,
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send, color: Colors.white),
+                  onPressed: _isLoading ? null : _sendImageWithMessage,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Suggestion chips for image
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildImageSuggestionChip('Solve this problem'),
+                _buildImageSuggestionChip('Explain this'),
+                _buildImageSuggestionChip('Translate this text'),
+                _buildImageSuggestionChip('What is this?'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageSuggestionChip(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ActionChip(
+        label: Text(text, style: const TextStyle(fontSize: 12)),
+        backgroundColor: Colors.purple.withOpacity(0.1),
+        side: BorderSide(color: Colors.purple.withOpacity(0.3)),
+        onPressed: () {
+          _messageController.text = text;
+        },
+      ),
+    );
+  }
+
   Widget _buildInputField() {
+    // Hide input field buttons when image preview is showing
+    if (_pendingImageData != null) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(

@@ -52,7 +52,29 @@ User Question: $message''';
     }
   }
 
-  Future<String> analyzeImage(Uint8List imageBytes, String mimeType) async {
+  // Analyze image with custom user prompt
+  Future<String> analyzeImageWithPrompt(Uint8List imageBytes, String mimeType, String userPrompt) async {
+    try {
+      // If you're using Google's Generative AI or similar
+      final prompt = '''
+$userPrompt
+
+Please analyze the image and provide a detailed, helpful response based on the user's request.
+If it's a math problem, solve it step by step.
+If it's a diagram, explain it clearly.
+If it's text, read and interpret it.
+Be thorough but concise in your explanation.
+''';
+
+      // Call your existing image analysis with the custom prompt
+      return await analyzeImage(imageBytes, mimeType, customPrompt: prompt);
+    } catch (e) {
+      throw Exception('Failed to analyze image: $e');
+    }
+  }
+
+  // Update existing analyzeImage method to accept optional custom prompt
+  Future<String> analyzeImage(Uint8List imageBytes, String mimeType, {String? customPrompt}) async {
     try {
       final response = await _chatSession.sendMessage(
         Content.multi([
